@@ -20,7 +20,7 @@ setup(
     ],
     entry_points={
         'console_scripts': [
-            'yowsup = yowsup.cli:main',
+            'yowsup-cli = yowsup.cli:main',
         ],
     },
     license=open('MIT-LICENSE.txt').read(),
