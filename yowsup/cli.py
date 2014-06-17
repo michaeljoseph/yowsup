@@ -22,7 +22,15 @@ OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 '''
 
 import argparse, sys, os, csv
-from Yowsup.Common.utilities import Utilities
+import threading, time, base64
+
+
+from yowsup.common import utilities, debugger, constants
+#from yowsup.clients import CmdClient, EchoClient, ListenerClient
+#from yowsup.registration import exists, code, registration_request
+#from yowsup import contacts
+
+#from Yowsup.Common.utilities import Utilities
 from Yowsup.Common.debugger import Debugger
 from Yowsup.Common.constants import Constants
 from Examples.CmdClient import WhatsappCmdClient
@@ -32,8 +40,6 @@ from Yowsup.Registration.v2.existsrequest import WAExistsRequest as WAExistsRequ
 from Yowsup.Registration.v2.coderequest import WACodeRequest as WACodeRequestV2
 from Yowsup.Registration.v2.regrequest import WARegRequest as WARegRequestV2
 from Yowsup.Contacts.contacts import WAContactsSyncRequest
-
-import threading,time, base64
 
 DEFAULT_CONFIG = os.path.expanduser("~")+"/.yowsup/auth"
 COUNTRIES_CSV = "countries.csv"
@@ -73,6 +79,8 @@ Usage Example for listening to incoming messages:
 You can also use config.example as a template
 """
 
+# FIXME: move these helpers to their own module (yowsup.common.something)
+
 def startDbusInterface():
 	from dbus.mainloop.glib import DBusGMainLoop
 	from Yowsup.Interfaces.DBus.DBusInterface import DBusInitInterface
@@ -89,6 +97,7 @@ def startDbusInterface():
 	mainloop.run()
 
 
+# FIXME: refacto py3k things (consider six? or a just a compat module)
 def resultToString(result):
 	unistr = str if sys.version_info >= (3, 0) else unicode
 	out = []
@@ -155,13 +164,12 @@ def dissectPhoneNumber(phoneNumber):
 		pass
 	return False
 
+# TODO: refactor cli to docopt or click(!)
 def main():
     parser = argparse.ArgumentParser(description='yowsup-cli Command line options')
 
     clientsGroup = parser.add_argument_group("Client options")
-
     regGroup = parser.add_argument_group("Registration options")
-
 
     modes = clientsGroup.add_mutually_exclusive_group()
     modes.add_argument('-l','--listen', help='Listen to messages', action="store_true", required=False, default=False)
@@ -169,34 +177,21 @@ def main():
     modes.add_argument('-i','--interactive', help="Start an interactive conversation with a contact. Phone is full number including country code, without '+' or '00'", action="store", metavar='<phone>', required=False)
     modes.add_argument('-b','--broadcast', help="Broadcast message to multiple recepients, comma seperated", action="store", nargs=2, metavar=('<jids>', '<message>'), required=False)
 
-    #modes.add_argument('-b','--bot', help='Bot', action="store_true", required=False, default=False)
-
-
     clientsGroup.add_argument('-w','--wait', help='If used with -s, then connection will not close until server confirms reception of the message', action="store_true", required=False, default=False)
     clientsGroup.add_argument('-a','--autoack', help='If used with -l or -i, then a message received ack would be automatically sent for received messages', action="store_true", required=False, default=False)
     clientsGroup.add_argument('-k','--keepalive', help="When used with -l or -i, Yowsup will automatically respond to server's ping requests to keep connection alive", action="store_true", required=False, default=False)
-
 
     regSteps = regGroup.add_mutually_exclusive_group()
     regSteps.add_argument("-r", '--requestcode', help='Request the 3 digit registration code from Whatsapp.', action="store", required=False, metavar="(sms|voice)")
     regSteps.add_argument("-R", '--register', help='Register account on Whatsapp using the provided 3 digit code', action="store", required=False, metavar="code")
     regSteps.add_argument("-e", '--exists', help='Check if account credentials are valid. WARNING: Whatsapp now changes your password everytime you use this. Make sure you update your config file if the output informs about a password change', action="store_true", required=False)
 
-
-
-
-
     contactOptions = parser.add_argument_group("Contacts options").add_mutually_exclusive_group();
-
     contactOptions.add_argument('--sync', help='Sync provided numbers. Numbers should be comma-separated. If a number is not in international format, Whatsapp will assume your own country code for it. Returned data indicate which numbers are whatsapp users and which are not. For Whatsapp users, it will return some info about each user, like user status.', metavar="numbers", action="store", required=False)
 
-
-
     debugTools = parser.add_argument_group("Debug tools").add_mutually_exclusive_group();
-
     debugTools.add_argument('--generatepassword', help="Generate password from given string in same way Whatsapp generates it from a given IMEI or MAC Address", action="store", metavar="input")
     debugTools.add_argument('--decodestring', help="Decode byte arrays found in decompiled version of Whatsapp. Tested with S40 version. Input should be comma separated without the enclosing brackets. Example: ./yowsup-cli --decodestring 112,61,100,123,114,103,96,114,99,99,61,125,118,103", action="store", metavar="encoded_array")
-
 
     parser.add_argument("--help-config", help="Display info about configuration format", action="store_true")
     parser.add_argument('-c','--config', help="Path to config file containing authentication info. For more info about config format use --help-config", action="store", metavar="file", required=False, default=False)
@@ -204,7 +199,6 @@ def main():
     parser.add_argument("--ignorecached", help="Don't use cached token if exists", action="store_true", required=False, default=False)
     parser.add_argument('-d','--debug', help='Enable debug messages', action="store_true", required=False, default=False)
     parser.add_argument('-v', '--version', help="Print version info and exit", action='store_true', required=False, default=False)
-
 
     args = vars(parser.parse_args())
     if len(sys.argv) == 1:
@@ -216,12 +210,9 @@ def main():
             print("yowsup-cli %s, using Yowsup %s"%(__version__, Constants.v))
     else:
             credentials = getCredentials(args["config"] or DEFAULT_CONFIG)
-
             if credentials:
-
                     countryCode, login, identity, password = credentials
-
-                    identity = Utilities.processIdentity(identity)
+                    identity = utilities.process_identity(identity)
                     password = base64.b64decode(bytes(password.encode('utf-8')))
 
                     if countryCode:
@@ -235,7 +226,7 @@ def main():
                     Debugger.enabled = args['debug']
 
                     if args["ignorecached"]:
-                            Utilities.tokenCacheEnabled = False
+                            utilities.token_cache_enabled = False
 
                     if args["interactive"]:
                             val = args["interactive"]
@@ -248,7 +239,6 @@ def main():
                             wa.login(login, password)
                     elif args['listen']:
                             wa = WhatsappListenerClient(args['keepalive'], args['autoack'])
-
                             wa.login(login, password)
 
                     elif args['broadcast']:
@@ -302,8 +292,8 @@ def main():
             elif args["dbus"]:
                 startDbusInterface()
             elif args["generatepassword"]:
-                    print(Utilities.processIdentity(args["generatepassword"]));
+                    print(utilities.process_identity(args["generatepassword"]));
             elif args["decodestring"]:
-                    print(Utilities.decodeString(map(int, "".join(args["decodestring"].split(' ')).split(','))))
+                    print(utilities.decode_string(map(int, "".join(args["decodestring"].split(' ')).split(','))))
             else:
                     print("Error: config file is invalid")
